@@ -62,15 +62,31 @@ inline __device__ float sigma_to_trans(
 
 template <typename T>
 __global__ void density_to_sigma_forward_kernel(
+        const uint32_t n_samples,
+        const tcnn::network_precision_t* __restrict__ density,
+        T* __restrict__ sigma
+) {
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i >= n_samples) return;
+
+    sigma[i] = (T)density_to_sigma(fminf(density[i], 12.0f));
+}
+
+template <typename T>
+__global__ void density_to_sigma_forward_kernel_fused(
 	const uint32_t n_samples,
 	const tcnn::network_precision_t* __restrict__ density,
-	T* __restrict__ sigma
+	T* __restrict__ sigma,
+    const float* __restrict__ dt,
+    float* __restrict__ alpha
 ) {
 	const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	if (i >= n_samples) return;
 
 	sigma[i] = (T)density_to_sigma(fminf(density[i], 12.0f));
+    alpha[i] = 1.0f - __expf(-(float)sigma[i] * dt[i]);
 }
 
 // this computes dL/ddensity = dL/dsigma * dsigma/ddensity and applies it back to the original density

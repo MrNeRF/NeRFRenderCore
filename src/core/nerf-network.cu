@@ -418,17 +418,12 @@ std::unique_ptr<NerfNetwork::ForwardContext> NerfNetwork::forward(
 	cudaMemsetAsync(network_ws.trans_buf, 0, batch_size * sizeof(float), stream);
 
 	// Continue forward with custom operators
-	density_to_sigma_forward_kernel<<<n_blocks_linear(n_samples), n_threads_linear, 0, stream>>>(
+	density_to_sigma_forward_kernel_fused<<<n_blocks_linear(n_samples), n_threads_linear, 0, stream>>>(
 		n_samples,
 		concat_buffer,
-		network_ws.sigma_buf
-	);
-
-	sigma_to_alpha_forward_kernel<<<n_blocks_linear(n_samples), n_threads_linear, 0, stream>>>(
-		n_samples,
 		network_ws.sigma_buf,
-		dt_batch,
-		network_ws.alpha_buf
+        dt_batch,
+        network_ws.alpha_buf
 	);
 
 	sigma_to_ray_rgba_forward_kernel<<<n_blocks_linear(n_rays), n_threads_linear, 0, stream>>>(
