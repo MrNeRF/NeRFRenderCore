@@ -111,7 +111,9 @@ __global__ void sigma_to_ray_rgba_forward_kernel(
 	const uint32_t* __restrict__ ray_offset_buf,
     const tcnn::network_precision_t* __restrict__ sample_rgb_buf,
 	const float* __restrict__ alpha_buf,
-    float* __restrict__ ray_rgba_buf
+    const float* __restrict__ target_rgba,
+    float* __restrict__ ray_rgba_buf,
+    float* __restrict__ sse_loss
 ) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -157,6 +159,29 @@ __global__ void sigma_to_ray_rgba_forward_kernel(
     ray_rgba_buf[idx + 1 * batch_size] = g;
     ray_rgba_buf[idx + 2 * batch_size] = b;
     ray_rgba_buf[idx + 3 * batch_size] = a;
+
+    const uint32_t r_idx = idx;
+    const uint32_t g_idx = r_idx + batch_size;
+    const uint32_t b_idx = g_idx + batch_size;
+    const uint32_t a_idx = b_idx + batch_size;
+
+    if (idx >= n_rays) {
+        sse_loss[r_idx] = 0.0f;
+        sse_loss[g_idx] = 0.0f;
+        sse_loss[b_idx] = 0.0f;
+        sse_loss[a_idx] = 0.0f;
+        return;
+    }
+
+    const float dr = r - target_rgba[r_idx];
+    const float dg = g - target_rgba[g_idx];
+    const float db = b - target_rgba[b_idx];
+    const float da = a - target_rgba[a_idx];
+
+    sse_loss[r_idx] = (dr * dr);
+    sse_loss[g_idx] = (dg * dg);
+    sse_loss[b_idx] = (db * db);
+    sse_loss[a_idx] = (da * da);
 }
 
 // sigma to ray color backward
@@ -248,40 +273,6 @@ __global__ void sigma_to_ray_rgba_backward_kernel(
 			break;
 		}
     }
-}
-
-// RGBA to loss
-__global__ void ray_rgba_to_loss_forward_kernel(
-	const uint32_t n_rays,
-	const uint32_t batch_size,
-	const float* __restrict__ ray_rgba,
-	const float* __restrict__ target_rgba,
-	float* __restrict__ sse_loss
-) {
-	const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-	const uint32_t r_idx = idx;
-	const uint32_t g_idx = r_idx + batch_size;
-	const uint32_t b_idx = g_idx + batch_size;
-	const uint32_t a_idx = b_idx + batch_size;
-
-	if (idx >= n_rays) {
-		sse_loss[r_idx] = 0.0f;
-		sse_loss[g_idx] = 0.0f;
-		sse_loss[b_idx] = 0.0f;
-		sse_loss[a_idx] = 0.0f;
-		return;
-	}
-
-	const float dr = ray_rgba[r_idx] - target_rgba[r_idx];
-	const float dg = ray_rgba[g_idx] - target_rgba[g_idx];
-	const float db = ray_rgba[b_idx] - target_rgba[b_idx];
-	const float da = ray_rgba[a_idx] - target_rgba[a_idx];
-
-	sse_loss[r_idx] = (dr * dr);
-	sse_loss[g_idx] = (dg * dg);
-	sse_loss[b_idx] = (db * db);
-	sse_loss[a_idx] = (da * da);
 }
 
 // dL/dR = (1/4) * (dL/dR_r + dL/dR_g + dL/dR_b + dL/dR_a)

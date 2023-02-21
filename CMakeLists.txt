@@ -8,6 +8,8 @@ cmake_policy(SET CMP0104 NEW)
 
 cmake_policy(SET CMP0077 NEW)
 
+set(CMAKE_CUDA_COMPILER /usr/local/cuda-12.0/bin/nvcc)
+set(CMAKE_CUDA_ARCHITECTURES 86)
 project (NeRFRenderCore LANGUAGES CUDA CXX)
 
 

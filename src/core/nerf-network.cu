@@ -433,15 +433,9 @@ std::unique_ptr<NerfNetwork::ForwardContext> NerfNetwork::forward(
 		ray_offset,
 		output_buffer,
 		network_ws.alpha_buf,
-		network_ws.ray_rgba
-	);
-
-	ray_rgba_to_loss_forward_kernel<<<n_blocks_linear(batch_size), n_threads_linear, 0, stream>>>(
-		n_rays,
-		batch_size,
+        target_rgba,
 		network_ws.ray_rgba,
-		target_rgba,
-		network_ws.loss_buf
+        network_ws.loss_buf
 	);
 
 	return fwd_ctx;
