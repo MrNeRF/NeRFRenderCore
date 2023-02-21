@@ -479,24 +479,17 @@ void NerfNetwork::backward(
 	cudaMemsetAsync(network_ws.grad_dL_dsigma, 0, batch_size * sizeof(float), stream);
 
 	// Backpropagate loss
-	ray_rgba_to_loss_backward_kernel<<<n_blocks_linear(n_rays), n_threads_linear, 0, stream>>>(
-		n_rays,
-		batch_size,
-		1.0f / (2.0f * (float)n_rays),
-		network_ws.ray_rgba,
-		target_rgba,
-		network_ws.grad_dL_dR
-	);
-
 	sigma_to_ray_rgba_backward_kernel<<<n_blocks_linear(n_rays), n_threads_linear, 0, stream>>>(
 		n_rays,
 		batch_size,
+        1.0f / (2.0f * (float)n_rays),
 		ray_steps,
 		ray_offset,
 		dt_batch,
 		network_ws.alpha_buf,
 		network_color,
 		network_ws.ray_rgba,
+        target_rgba,
 		network_ws.grad_dL_dR,
 		network_ws.grad_dL_dsigma,
 		network_ws.grad_dL_dcolor

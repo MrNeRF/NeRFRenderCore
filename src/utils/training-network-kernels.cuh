@@ -190,13 +190,15 @@ __global__ void sigma_to_ray_rgba_forward_kernel(
 __global__ void sigma_to_ray_rgba_backward_kernel(
     const uint32_t n_rays,
     const uint32_t batch_size,
+    const float inv_2nrays,
     const uint32_t* __restrict__ n_samples_buf,
     const uint32_t* __restrict__ ray_offset_buf,
     const float* __restrict__ dt_buf,
 	const float* __restrict__ alpha_buf,
     const tcnn::network_precision_t* __restrict__ sample_rgb_buf,
 	const float* __restrict__ ray_rgba_buf,
-    const float* __restrict__ dL_dR_buf,
+    const float* __restrict__ target_rgba,
+    float* __restrict__ dL_dR_buf,
     float* __restrict__ dL_dsigma_buf,
 	float* __restrict__ dL_dcolor_buf
 ) {
@@ -204,14 +206,30 @@ __global__ void sigma_to_ray_rgba_backward_kernel(
 
     if (idx >= n_rays) return;
 
+    const uint32_t idx_offset_0 = idx;
+    const uint32_t idx_offset_1 = idx_offset_0 + batch_size;
+    const uint32_t idx_offset_2 = idx_offset_1 + batch_size;
+    const uint32_t idx_offset_3 = idx_offset_2 + batch_size;
+
+    const float dr = ray_rgba_buf[idx_offset_0] - target_rgba[idx_offset_0];
+    const float dg = ray_rgba_buf[idx_offset_1] - target_rgba[idx_offset_1];
+    const float db = ray_rgba_buf[idx_offset_2] - target_rgba[idx_offset_2];
+    const float da = ray_rgba_buf[idx_offset_3] - target_rgba[idx_offset_3];
+
+    const float dL_dR_r = inv_2nrays * dr;
+    const float dL_dR_g = inv_2nrays * dg;
+    const float dL_dR_b = inv_2nrays * db;
+    const float dL_dR_a = inv_2nrays * da;
+
+    dL_dR_buf[idx_offset_0] = dL_dR_r;
+    dL_dR_buf[idx_offset_1] = dL_dR_g;
+    dL_dR_buf[idx_offset_2] = dL_dR_b;
+    dL_dR_buf[idx_offset_3] = dL_dR_a;
+
     // offsets
     const uint32_t n_samples = n_samples_buf[idx];
     const uint32_t sample_offset = ray_offset_buf[idx];
 
-	const uint32_t idx_offset_0 = idx;
-	const uint32_t idx_offset_1 = idx_offset_0 + batch_size;
-	const uint32_t idx_offset_2 = idx_offset_1 + batch_size;
-	const uint32_t idx_offset_3 = idx_offset_2 + batch_size;
 
     // local references to sample data
     const float* __restrict__ s_dt = dt_buf + sample_offset;
@@ -221,11 +239,6 @@ __global__ void sigma_to_ray_rgba_backward_kernel(
     const tcnn::network_precision_t* __restrict__ s_b = s_g + batch_size;
 	
 	const float* __restrict__ s_alpha = alpha_buf + sample_offset;
-
-    const float dL_dR_r = dL_dR_buf[idx_offset_0];
-	const float dL_dR_g = dL_dR_buf[idx_offset_1];
-	const float dL_dR_b = dL_dR_buf[idx_offset_2];
-	const float dL_dR_a = dL_dR_buf[idx_offset_3];
 
     float* __restrict__ s_dL_dsigma = dL_dsigma_buf + sample_offset;
 
