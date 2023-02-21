@@ -12,109 +12,32 @@ using namespace tcnn;
 
 NRC_NAMESPACE_BEGIN
 
-// TODO: move this into a Camera utility kernel file
-// init_rays CUDA kernel
-__global__ void generate_rays_pinhole_kernel(
-	const uint32_t n_rays,
-	const uint32_t batch_size,
-	const BoundingBox* __restrict__ bbox,
-	const Camera* __restrict__ cam,
-	const uint32_t start_idx,
-	float* __restrict__ ray_ori,
-	float* __restrict__ ray_dir,
-	float* __restrict__ ray_idir,
-	float* __restrict__ ray_t,
-	float* __restrict__ ray_trans,
-    uint32_t* __restrict__ ray_idx,
-	bool* __restrict__ ray_alive,
-	bool* __restrict__ ray_active
-) {
-    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-
-	if (i >= n_rays) {
-		return;
-	}
-
-	uint32_t idx = start_idx + i;
-	
-	uint32_t x = idx % cam->resolution.x;
-	uint32_t y = idx / cam->resolution.x;
-
-	Ray local_ray = cam->local_ray_at_pixel_xy_index(x, y);
-
-    float3 global_origin = cam->transform * local_ray.o;
-	float3 global_direction = cam->transform * local_ray.d - cam->transform.get_translation();
-
-	// normalize ray directions
-	const float n = rnorm3df(global_direction.x, global_direction.y, global_direction.z);
-
-	const float dir_x = n * global_direction.x;
-	const float dir_y = n * global_direction.y;
-	const float dir_z = n * global_direction.z;
-
-	const float idir_x = 1.0f / dir_x;
-	const float idir_y = 1.0f / dir_y;
-	const float idir_z = 1.0f / dir_z;
-
-    // save data to buffers
-	uint32_t i_offset_0 = i;
-	uint32_t i_offset_1 = i_offset_0 + batch_size;
-	uint32_t i_offset_2 = i_offset_1 + batch_size;
-
-	ray_ori[i_offset_0] = global_origin.x;
-	ray_ori[i_offset_1] = global_origin.y;
-	ray_ori[i_offset_2] = global_origin.z;
-
-	ray_dir[i_offset_0] = dir_x;
-	ray_dir[i_offset_1] = dir_y;
-	ray_dir[i_offset_2] = dir_z;
-
-	ray_idir[i_offset_0] = idir_x;
-	ray_idir[i_offset_1] = idir_y;
-	ray_idir[i_offset_2] = idir_z;
-
-	float t;
-	const bool intersects_bbox = bbox->get_ray_t_intersection(
-		global_origin.x, global_origin.y, global_origin.z,
-		dir_x, dir_y, dir_z,
-		idir_x, idir_y, idir_z,
-		t
-	);
-
-	ray_t[i] = intersects_bbox ? fmaxf(0.0f, t + 1e-5f) : 0.0f;
-
-	ray_alive[i] = intersects_bbox;
-
-    ray_idx[i] = idx;
-
-	ray_active[i] = true;
-
-	ray_trans[i] = 1.0f;
-}
-
-
 __global__ void march_rays_to_first_occupied_cell_kernel(
     const uint32_t n_rays,
 	const uint32_t batch_size,
+    const uint32_t start_idx,
 	const OccupancyGrid* grid,
 	const BoundingBox* bbox,
+    const Camera* __restrict__ cam,
 	const float dt_min,
 	const float dt_max,
 	const float cone_angle,
 	
-	// input buffers (read-only)
-	const float* __restrict__ ray_dir,
-	const float* __restrict__ ray_idir,
 
     // dual-use buffers (read/write)
+    float* __restrict__ ray_dir,
+    float* __restrict__ ray_idir,
     bool* __restrict__ ray_alive,
 	float* __restrict__ ray_ori,
     float* __restrict__ ray_t,
 
 	// output buffers (write-only)
+    float* __restrict__ ray_trans,
+    uint32_t* __restrict__ ray_idx,
 	float* __restrict__ network_pos,
 	float* __restrict__ network_dir,
-	float* __restrict__ network_dt
+	float* __restrict__ network_dt,
+    bool* __restrict__ ray_active
 ) {
 	// get thread index
 	const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -122,6 +45,64 @@ __global__ void march_rays_to_first_occupied_cell_kernel(
 	// check if thread is out of bounds
 	if (i >= n_rays) return;
 
+    {// generate_rays_pinhole_kernel
+
+        uint32_t idx = start_idx + i;
+
+        uint32_t x = idx % cam->resolution.x;
+        uint32_t y = idx / cam->resolution.x;
+
+        Ray local_ray = cam->local_ray_at_pixel_xy_index(x, y);
+
+        float3 global_origin = cam->transform * local_ray.o;
+        float3 global_direction = cam->transform * local_ray.d - cam->transform.get_translation();
+
+        // normalize ray directions
+        const float n = rnorm3df(global_direction.x, global_direction.y, global_direction.z);
+
+        const float dir_x = n * global_direction.x;
+        const float dir_y = n * global_direction.y;
+        const float dir_z = n * global_direction.z;
+
+        const float idir_x = 1.0f / dir_x;
+        const float idir_y = 1.0f / dir_y;
+        const float idir_z = 1.0f / dir_z;
+
+        // save data to buffers
+        uint32_t i_offset_0 = i;
+        uint32_t i_offset_1 = i_offset_0 + batch_size;
+        uint32_t i_offset_2 = i_offset_1 + batch_size;
+
+        ray_ori[i_offset_0] = global_origin.x;
+        ray_ori[i_offset_1] = global_origin.y;
+        ray_ori[i_offset_2] = global_origin.z;
+
+        ray_dir[i_offset_0] = dir_x;
+        ray_dir[i_offset_1] = dir_y;
+        ray_dir[i_offset_2] = dir_z;
+
+        ray_idir[i_offset_0] = idir_x;
+        ray_idir[i_offset_1] = idir_y;
+        ray_idir[i_offset_2] = idir_z;
+
+        float t;
+        const bool intersects_bbox = bbox->get_ray_t_intersection(
+                global_origin.x, global_origin.y, global_origin.z,
+                dir_x, dir_y, dir_z,
+                idir_x, idir_y, idir_z,
+                t
+        );
+
+        ray_t[i] = intersects_bbox ? fmaxf(0.0f, t + 1e-5f) : 0.0f;
+
+        ray_alive[i] = intersects_bbox;
+
+        ray_idx[i] = idx;
+
+        ray_active[i] = true;
+
+        ray_trans[i] = 1.0f;
+    }
     // check if ray has terminated or is currently inactive
     if (!ray_alive[i]) return;
 

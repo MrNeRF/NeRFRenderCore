@@ -12,44 +12,31 @@
 
 NRC_NAMESPACE_BEGIN
 
-__global__ void generate_rays_pinhole_kernel(
-	const uint32_t n_rays,
-	const uint32_t batch_size,
-	const BoundingBox* __restrict__ bbox,
-	const Camera* __restrict__ cam,
-	const uint32_t start_idx,
-	float* __restrict__ ray_ori,
-	float* __restrict__ ray_dir,
-	float* __restrict__ ray_idir,
-	float* __restrict__ ray_t,
-	float* __restrict__ ray_trans,
-    uint32_t* __restrict__ ray_idx,
-	bool* __restrict__ ray_alive,
-	bool* __restrict__ ray_active
-);
-
 __global__ void march_rays_to_first_occupied_cell_kernel(
     const uint32_t n_rays,
 	const uint32_t batch_size,
+    const uint32_t start_idx,
 	const OccupancyGrid* grid,
 	const BoundingBox* bbox,
+    const Camera* __restrict__ cam,
 	const float dt_min,
 	const float dt_max,
 	const float cone_angle,
-	
-	// input buffers (read-only)
-	const float* __restrict__ ray_dir,
-	const float* __restrict__ ray_idir,
 
     // dual-use buffers (read/write)
+	float* __restrict__ ray_dir,
+	float* __restrict__ ray_idir,
     bool* __restrict__ ray_alive,
 	float* __restrict__ ray_ori,
     float* __restrict__ ray_t,
 
 	// output buffers (write-only)
+    float* __restrict__ ray_trans,
+    uint32_t* __restrict__ ray_idx,
 	float* __restrict__ network_pos,
 	float* __restrict__ network_dir,
-	float* __restrict__ network_dt
+	float* __restrict__ network_dt,
+    bool* __restrict__ ray_active
 );
 
 __global__ void march_rays_and_generate_network_inputs_kernel(

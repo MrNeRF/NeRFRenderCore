@@ -112,22 +112,6 @@ void Renderer::submit(
         uint32_t pixel_start = n_pixels_filled;
 
         // generate rays for the pixels in this batch
-        generate_rays_pinhole_kernel<<<n_blocks_linear(n_rays), n_threads_linear, 0, stream>>>(
-            n_rays,
-            ctx.batch_size,
-            workspace.bounding_box,
-            workspace.camera,
-            pixel_start,
-            workspace.ray_origin[active_buf_idx],
-            workspace.ray_dir[active_buf_idx],
-            workspace.ray_idir[active_buf_idx],
-            workspace.ray_t[active_buf_idx],
-            workspace.ray_trans[active_buf_idx],
-            workspace.ray_idx[active_buf_idx],
-            workspace.ray_alive,
-            workspace.ray_active[active_buf_idx]
-        );
-
         const float dt_min = NeRFConstants::min_step_size;
         const float dt_max = nerf.bounding_box.size_x * dt_min;
         const float cone_angle = NeRFConstants::cone_angle;
@@ -135,25 +119,28 @@ void Renderer::submit(
         march_rays_to_first_occupied_cell_kernel<<<n_blocks_linear(n_rays), n_threads_linear, 0, stream>>>(
             n_rays,
             ctx.batch_size,
+            pixel_start,
             workspace.occupancy_grid,
             workspace.bounding_box,
+            workspace.camera,
             dt_min,
             dt_max,
             cone_angle,
 
-            // input buffers
+            // dual-use buffers
             workspace.ray_dir[active_buf_idx],
             workspace.ray_idir[active_buf_idx],
-
-            // dual-use buffers
             workspace.ray_alive,
             workspace.ray_origin[active_buf_idx],
             workspace.ray_t[active_buf_idx],
 
             // output buffers
+            workspace.ray_trans[active_buf_idx],
+            workspace.ray_idx[active_buf_idx],
             workspace.network_pos,
             workspace.network_dir,
-            workspace.network_dt
+            workspace.network_dt,
+            workspace.ray_active[active_buf_idx]
         );
 
         // ray marching loop
